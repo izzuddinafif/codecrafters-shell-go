@@ -28,7 +28,8 @@ func findExecs() ([]string, error) {
 	for _, p := range paths {
 		f, err := os.Open(p)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open %s: %s", p, err)
+			continue
+			// return nil, fmt.Errorf("failed to open %s: %s", p, err)
 		}
 		defer f.Close()
 		dirs, err := f.ReadDir(-1)
