@@ -18,7 +18,7 @@ var builtIns = map[string]bool{
 }
 
 func isExec(mode os.FileMode) bool {
-	return mode&0111 != 0 // bytewise AND against 0111 bitmask
+	return mode&0o111 != 0 // bytewise AND against 0111 bitmask
 }
 
 func findExecs() ([]string, error) {
@@ -50,7 +50,8 @@ func findExecs() ([]string, error) {
 
 func getExec(execName string, execs []string) (string, bool) {
 	for _, ex := range execs {
-		if filepath.Base(ex) == execName
+		if filepath.Base(ex) == execName {
+			return ex, true
 		}
 	}
 	return "", false
