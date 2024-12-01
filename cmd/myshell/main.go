@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 // Ensures gofmt doesn't remove the "fmt" import in stage 1 (feel free to remove this!)
@@ -18,7 +19,18 @@ func REPL() (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: not found\n", input)
+	in := strings.Fields(string(input))
+	inLen := len(input)
+	switch in[0] {
+	case "exit":
+		if inLen > 1 {
+			if in[1] == "0" {
+				os.Exit(0)
+			}
+		}
+	default:
+		fmt.Printf("%s: not found\n", input)
+	}
 	return nil
 }
 
