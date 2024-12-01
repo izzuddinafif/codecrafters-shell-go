@@ -37,7 +37,7 @@ func REPL() (err error) {
 		if _, exist := builtIns[in[1]]; exist {
 			fmt.Println(in[1], "is a shell builtin")
 		} else {
-			fmt.Println()
+			fmt.Printf("%s: not found\n", in[1])
 		}
 	default:
 		fmt.Printf("%s: not found\n", input)
