@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -47,10 +48,9 @@ func findExecs() ([]string, error) {
 	return execs, nil
 }
 
-func getExec(exec string, execs []string) (string, bool) {
+func getExec(execName string, execs []string) (string, bool) {
 	for _, ex := range execs {
-		if strings.HasSuffix(ex, exec) {
-			return ex, true
+		if filepath.Base(ex) == execName
 		}
 	}
 	return "", false
