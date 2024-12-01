@@ -27,7 +27,12 @@ func REPL() (err error) {
 			if in[1] == "0" {
 				os.Exit(0)
 			}
+		} else {
+			os.Exit(0)
 		}
+	case "echo":
+		echoed := strings.Join(in[1:], " ")
+		fmt.Println(echoed)
 	default:
 		fmt.Printf("%s: not found\n", input)
 	}
