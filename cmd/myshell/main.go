@@ -34,7 +34,8 @@ func findExecs() ([]string, error) {
 		dirs, err := f.ReadDir(-1)
 		f.Close()
 		if err != nil {
-			return nil, fmt.Errorf("failed to read dir: %s", err)
+			continue
+			// return nil, fmt.Errorf("failed to read dir: %s", err)
 		}
 		for _, dir := range dirs {
 			info, _ := dir.Info()
