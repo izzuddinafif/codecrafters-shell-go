@@ -31,8 +31,8 @@ func findExecs() ([]string, error) {
 			continue
 			// return nil, fmt.Errorf("failed to open %s: %s", p, err)
 		}
-		defer f.Close()
 		dirs, err := f.ReadDir(-1)
+		f.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read dir: %s", err)
 		}
