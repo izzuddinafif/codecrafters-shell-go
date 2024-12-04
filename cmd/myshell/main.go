@@ -11,19 +11,29 @@ import (
 	"strings"
 )
 
+var d debugger = debugger{enabled: false}
+
 var builtIns = map[string]bool{
 	"exit": true,
 	"echo": true,
 	"type": true,
 }
 
-func isExec(mode os.FileMode) bool {
-	return mode&0o111 != 0 // bytewise AND against 0111 bitmask
+func isExec(file os.FileMode) bool {
+	return file.Perm()&0o111 != 0 // bytewise AND against 0111 bitmask
+}
+
+func isSymlink(file os.DirEntry) bool {
+	return file.Type()&os.ModeSymlink != 0
 }
 
 func findExecs() ([]string, error) {
-	PATH := os.Getenv("PATH")
-	paths := strings.Split(PATH, ":")
+	pathEnv, ok := os.LookupEnv("PATH")
+	if !ok || pathEnv == "" {
+		return nil, fmt.Errorf("PATH environment variable is not set")
+	}
+	paths := strings.Split(pathEnv, ":")
+	d.print("paths: ", strings.Join(paths, " "))
 	execs := make([]string, 0)
 
 	for _, p := range paths {
@@ -40,11 +50,14 @@ func findExecs() ([]string, error) {
 		}
 		for _, dir := range dirs {
 			info, _ := dir.Info()
-			if dir.Type().IsRegular() && isExec(info.Mode()) {
-				execs = append(execs, path.Join(p, dir.Name()))
+			if dir.Type().IsRegular() || isSymlink(dir) {
+				if isExec(info.Mode()) {
+					execs = append(execs, path.Join(p, dir.Name()))
+				}
 			}
 		}
 	}
+	d.print(execs)
 	return execs, nil
 }
 
@@ -91,21 +104,23 @@ func REPL() (err error) {
 		echoed := strings.Join(in[1:], " ")
 		fmt.Println(echoed)
 	case "type":
-		execs, err := findExecs()
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
 		if inLen < 2 {
 			fmt.Println("type: missing operand")
 			return nil
 		}
-		if _, exist := builtIns[in[1]]; exist {
-			fmt.Println(in[1], "is a shell builtin")
-		} else if exec, exist := getExec(in[1], execs); exist {
-			fmt.Println(in[1], "is", exec)
+		execs, err := findExecs()
+		d.print(execs)
+		if err != nil {
+			fmt.Println(err)
+			return nil
+		}
+		cmd := in[1]
+		if _, isBuiltin := builtIns[cmd]; isBuiltin {
+			fmt.Println(cmd, "is a shell builtin")
+		} else if exec, found := getExec(cmd, execs); found {
+			fmt.Println(cmd, "is", exec)
 		} else {
-			fmt.Printf("%s: not found\n", in[1])
+			fmt.Printf("%s: not found\n", cmd)
 		}
 	default:
 		fmt.Printf("%s: not found\n", strings.Join(in, " "))
