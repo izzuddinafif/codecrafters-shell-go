@@ -5,69 +5,45 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var d debugger = debugger{enabled: false}
-
-var builtIns = map[string]bool{
-	"exit": true,
-	"echo": true,
-	"type": true,
-}
+var d debugger = debugger{enabled: true}
 
 func isExec(file os.FileMode) bool {
-	return file.Perm()&0o111 != 0 // bytewise AND against 0111 bitmask
+	return file.IsRegular() && file.Perm()&0o111 != 0
 }
 
-func isSymlink(file os.DirEntry) bool {
-	return file.Type()&os.ModeSymlink != 0
-}
-
-func findExecs() ([]string, error) {
+// getExec returns inputted executable file's path found in system PATH directories.
+// Returns an error if PATH environment variable is not set or executable not found or other error.
+func getExec(execName string) (string, error) {
 	pathEnv, ok := os.LookupEnv("PATH")
 	if !ok || pathEnv == "" {
-		return nil, fmt.Errorf("PATH environment variable is not set")
+		return "", fmt.Errorf("PATH environment variable is not set")
 	}
-	paths := strings.Split(pathEnv, ":")
+	paths := strings.Split(pathEnv, string(os.PathListSeparator))
 	d.print("paths: ", strings.Join(paths, " "))
-	execs := make([]string, 0)
 
-	for _, p := range paths {
-		f, err := os.Open(p)
-		if err != nil {
-			continue
-			// return nil, fmt.Errorf("failed to open %s: %s", p, err)
-		}
-		dirs, err := f.ReadDir(-1)
-		f.Close()
-		if err != nil {
-			continue
-			// return nil, fmt.Errorf("failed to read dir: %s", err)
-		}
-		for _, dir := range dirs {
-			info, _ := dir.Info()
-			if dir.Type().IsRegular() || isSymlink(dir) {
-				if isExec(info.Mode()) {
-					execs = append(execs, path.Join(p, dir.Name()))
-				}
+	for _, dir := range paths {
+		fullPath := filepath.Join(dir, execName)
+		d.printf("looking for %s in %s", filepath.Base(fullPath), fullPath)
+
+		info, err := os.Stat(fullPath)
+		if err == nil {
+			if !info.IsDir() && isExec(info.Mode()) {
+				return fullPath, nil
 			}
+		} else if !os.IsNotExist(err) {
+			// Some other error occured
+			return "", err
+		} else {
+			// only continue if the error is os.ErrNotExist
+			continue
 		}
 	}
-	d.print(execs)
-	return execs, nil
-}
-
-func getExec(execName string, execs []string) (string, bool) {
-	for _, ex := range execs {
-		if filepath.Base(ex) == execName {
-			return ex, true
-		}
-	}
-	return "", false
+	return "", fmt.Errorf("%s: not found", execName)
 }
 
 // REPL is Read, Eval and Print Loop function that reads user
@@ -91,7 +67,7 @@ func REPL() (err error) {
 			fmt.Println("exit: too many arguments", inLen)
 			return nil
 		}
-		if inLen == 2 || in[1] != "0" {
+		if inLen == 2 {
 			code, err := strconv.Atoi(in[1])
 			if err != nil || code > 255 || code < 0 {
 				fmt.Println("exit: invalid argument")
@@ -108,16 +84,10 @@ func REPL() (err error) {
 			fmt.Println("type: missing operand")
 			return nil
 		}
-		execs, err := findExecs()
-		d.print(execs)
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
 		cmd := in[1]
 		if _, isBuiltin := builtIns[cmd]; isBuiltin {
 			fmt.Println(cmd, "is a shell builtin")
-		} else if exec, found := getExec(cmd, execs); found {
+		} else if exec, err := getExec(cmd); err == nil {
 			fmt.Println(cmd, "is", exec)
 		} else {
 			fmt.Printf("%s: not found\n", cmd)

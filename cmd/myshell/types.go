@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 )
 
@@ -20,12 +21,19 @@ func (d debugger) printf(format string, a ...interface{}) {
 	}
 }
 
-// func handleError(err error, msg string) {
-// 	if err != nil {
-// 		if msg != "" {
-// 			d.printf("%s: %v", msg, err)
-// 		} else {
-// 			d.print(err)
-// 		}
-// 	}
-// }
+var builtIns = map[string]bool{
+	"exit": true,
+	"echo": true,
+	"type": true,
+}
+
+// TODO: implement this type
+type command struct {
+	name     string
+	args     []string
+	external bool
+	err      error
+	stdin    io.Reader
+	stdout   io.Writer
+	stderr   io.Writer
+}
