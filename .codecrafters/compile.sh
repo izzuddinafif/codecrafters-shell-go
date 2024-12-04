@@ -9,7 +9,7 @@
 # Exit early if any commands fail
 set -e
 
-# Disable debugger in my code
+# Disable debugger in my code if it's enabled
 sed -i 's/debugger{enabled: true}/debugger{enabled: false}/g' cmd/myshell/main.go
 
 go build -o /tmp/shell-target cmd/myshell/*.go
