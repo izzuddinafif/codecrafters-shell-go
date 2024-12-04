@@ -12,12 +12,18 @@ import (
 
 var d debugger = debugger{enabled: true}
 
+// isExec checks if a file is executable by checking if it's a regular file
+// and if any execute bit is set when masking with 0111 (binary 000000111).
+// The bit mask 0111 checks owner(100), group(010), and other(001) execute
+// permissions by performing a bitwise AND with the file's permission bits.
 func isExec(file os.FileMode) bool {
 	return file.IsRegular() && file.Perm()&0o111 != 0
 }
 
-// getExec returns inputted executable file's path found in system PATH directories.
-// Returns an error if PATH environment variable is not set or executable not found or other error.
+// getExec searches for an executable in the system PATH and returns its full path.
+// It checks each directory in PATH for a file matching execName that has execute
+// permissions. Returns an error if PATH is not set, executable is not found, or
+// encounters permissions/IO errors.
 func getExec(execName string) (string, error) {
 	pathEnv, ok := os.LookupEnv("PATH")
 	if !ok || pathEnv == "" {
