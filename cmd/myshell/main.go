@@ -3,14 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-var d debugger = debugger{enabled: true}
+var d debugger = debugger{enabled: false}
 
 // isExec checks if a file is executable by checking if it's a regular file
 // and if any execute bit is set when masking with 0111 (binary 000000111).
@@ -125,7 +124,7 @@ func REPL() (err error) {
 		} else if exec, err := getCmdPath(cmd); err == nil {
 			fmt.Println(cmd, "is", exec)
 		} else {
-			fmt.Printf("%s: not found\n", cmd)
+			fmt.Printf("type: %s: not found\n", cmd)
 		}
 	default:
 		fmt.Printf("%s: not found\n", strings.Join(in, " "))
@@ -133,18 +132,15 @@ func REPL() (err error) {
 	return nil
 }
 
-func REPLv2() error {
+func REPLv2() {
 	cmd, err := parseUserInput()
 	if err != nil {
-		return fmt.Errorf("error parsing user command: %v", err)
-	}
-	if cmd.err != nil {
 		if err == os.ErrNotExist {
 			fmt.Printf("%s: command not found\n", cmd.name)
-			return nil
+			return
 		} else {
 			fmt.Println("error:", cmd.err)
-			return nil
+			return
 		}
 	}
 
@@ -152,17 +148,11 @@ func REPLv2() error {
 	if cmd.err != nil {
 		fmt.Println("error:", cmd.err)
 	}
-
-	return nil
 }
 
 func main() {
 	for {
 		fmt.Fprint(os.Stdout, "$ ")
-		err := REPLv2()
-		if err != nil {
-			log.Println("\n", err)
-			break
-		}
+		REPLv2()
 	}
 }
