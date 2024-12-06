@@ -146,7 +146,7 @@ func REPLv2() {
 
 	cmd.err = cmd.execute()
 	if cmd.err != nil {
-		fmt.Println("error:", cmd.err)
+		fmt.Fprintln(cmd.stderr, "error:", cmd.err)
 	}
 }
 

@@ -30,6 +30,7 @@ var builtIns = map[string]bool{
 	"exit": true,
 	"echo": true,
 	"type": true,
+	"pwd":  true,
 }
 
 // TODO: implement this type
@@ -95,6 +96,8 @@ func (cmd *command) execute() error {
 			} else {
 				fmt.Println("error:", err)
 			}
+		case "pwd":
+			fmt.Println(os.Getenv("PWD"))
 		}
 	} else {
 		c := exec.Command(cmd.name, cmd.args...)
