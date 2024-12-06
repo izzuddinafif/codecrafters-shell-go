@@ -86,9 +86,9 @@ func (cmd *command) execute() error {
 			}
 			c := cmd.args[0]
 			if _, isBuiltin := builtIns[c]; isBuiltin {
-				fmt.Println(cmd, "is a shell builtin")
+				fmt.Println(c, "is a shell builtin")
 			} else if path, err := getCmdPath(c); err == nil {
-				fmt.Println(cmd, "is", path)
+				fmt.Println(c, "is", path)
 			} else if err == os.ErrNotExist {
 				fmt.Printf("%s: not found\n", c)
 			} else {
