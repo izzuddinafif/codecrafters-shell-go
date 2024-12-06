@@ -20,11 +20,11 @@ func isExec(file os.FileMode) bool {
 	return file.IsRegular() && file.Perm()&0o111 != 0
 }
 
-// getExec searches for an executable in the system PATH and returns its full path.
+// getCmdPath searches for an executable in the system PATH and returns its full path.
 // It checks each directory in PATH for a file matching execName that has execute
 // permissions. Returns an error if PATH is not set, executable is not found, or
 // encounters permissions/IO errors.
-func getExec(execName string) (string, error) {
+func getCmdPath(execName string) (string, error) {
 	pathEnv, ok := os.LookupEnv("PATH")
 	if !ok || pathEnv == "" {
 		return "", fmt.Errorf("PATH environment variable is not set")
@@ -34,7 +34,7 @@ func getExec(execName string) (string, error) {
 
 	for _, dir := range paths {
 		fullPath := filepath.Join(dir, execName)
-		d.printf("looking for %s in %s", filepath.Base(fullPath), fullPath)
+		d.printf("looking for %s in %s", filepath.Base(fullPath), filepath.Dir(fullPath))
 
 		info, err := os.Stat(fullPath)
 		if err == nil {
@@ -49,7 +49,36 @@ func getExec(execName string) (string, error) {
 			continue
 		}
 	}
-	return "", fmt.Errorf("%s: not found", execName)
+	return "", os.ErrNotExist
+}
+
+func parseUserInput() (*command, error) {
+	cmd := newCommand()
+
+	str, _, err := bufio.NewReader(os.Stdin).ReadLine()
+	if err != nil {
+		return cmd, fmt.Errorf("failed to read input: %s", err)
+	}
+	// TODO: check this later
+	if len(str) < 1 {
+		return cmd, nil
+	}
+	input := strings.Fields(string(str))
+	cmd.name = input[0]
+	if len(input) > 1 {
+		cmd.args = input[1:]
+	}
+
+	_, cmd.internal = builtIns[cmd.name]
+
+	if !cmd.internal {
+		cmd.path, cmd.err = getCmdPath(cmd.name)
+		if cmd.err != nil {
+			return cmd, cmd.err
+		}
+	}
+
+	return cmd, nil
 }
 
 // REPL is Read, Eval and Print Loop function that reads user
@@ -93,7 +122,7 @@ func REPL() (err error) {
 		cmd := in[1]
 		if _, isBuiltin := builtIns[cmd]; isBuiltin {
 			fmt.Println(cmd, "is a shell builtin")
-		} else if exec, err := getExec(cmd); err == nil {
+		} else if exec, err := getCmdPath(cmd); err == nil {
 			fmt.Println(cmd, "is", exec)
 		} else {
 			fmt.Printf("%s: not found\n", cmd)
@@ -104,12 +133,35 @@ func REPL() (err error) {
 	return nil
 }
 
+func REPLv2() error {
+	cmd, err := parseUserInput()
+	if err != nil {
+		return fmt.Errorf("error parsing user command: %v", err)
+	}
+	if cmd.err != nil {
+		if err == os.ErrNotExist {
+			fmt.Printf("%s: command not found\n", cmd.name)
+			return nil
+		} else {
+			fmt.Println("error:", cmd.err)
+			return nil
+		}
+	}
+
+	cmd.err = cmd.execute()
+	if cmd.err != nil {
+		fmt.Println("error:", cmd.err)
+	}
+
+	return nil
+}
+
 func main() {
 	for {
 		fmt.Fprint(os.Stdout, "$ ")
-		err := REPL()
+		err := REPLv2()
 		if err != nil {
-			log.Println(err)
+			log.Println("\n", err)
 			break
 		}
 	}
