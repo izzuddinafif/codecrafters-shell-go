@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -96,7 +97,15 @@ func (cmd *command) execute() error {
 			}
 		}
 	} else {
+		c := exec.Command(cmd.name, cmd.args...)
+		c.Stdin = cmd.stdin
+		c.Stdout = cmd.stdout
+		c.Stderr = cmd.stderr
 
+		cmd.err = c.Run()
+		if cmd.err != nil {
+			return fmt.Errorf("%s: %v", cmd.name, cmd.err)
+		}
 	}
 
 	return nil
