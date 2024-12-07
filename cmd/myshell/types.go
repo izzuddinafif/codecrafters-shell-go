@@ -106,11 +106,11 @@ func (cmd *command) execute() error {
 			cd := func(dir string) error {
 				err := os.Chdir(dir)
 				if err != nil {
-					if err == os.ErrNotExist {
-						return fmt.Errorf("cd: %s: No such file or directory", dir)
+					if os.IsNotExist(err) {
+						return fmt.Errorf("cd: %v: No such file or directory", dir)
 					} else {
 						// other error occurs
-						return fmt.Errorf("cd: %s %v", dir, err)
+						return fmt.Errorf("cd: %s: %v", dir, err)
 					}
 				}
 				return nil
