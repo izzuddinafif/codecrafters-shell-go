@@ -60,20 +60,19 @@ func newCommand() *command {
 	}
 }
 
+// execute method executes cmd
 func (cmd *command) execute() error {
 
 	if cmd.internal {
 		switch cmd.name {
 		case "exit":
 			if len(cmd.args) > 1 {
-				fmt.Println("exit: too many arguments")
-				return nil
+				return fmt.Errorf("exit: too many arguments")
 			}
 			if len(cmd.args) == 2 {
 				code, err := strconv.Atoi(cmd.args[0])
 				if err != nil || code > 255 || code < 0 {
-					fmt.Println("exit: invalid argument")
-					return nil
+					return fmt.Errorf("exit: invalid argument")
 				}
 				os.Exit(code)
 			}
@@ -83,8 +82,7 @@ func (cmd *command) execute() error {
 			fmt.Println(echoed)
 		case "type":
 			if len(cmd.args) < 1 {
-				fmt.Println("type: missing operand")
-				return nil
+				return fmt.Errorf("type: missing operand")
 			}
 			c := cmd.args[0]
 			if _, isBuiltin := builtIns[c]; isBuiltin {
@@ -92,12 +90,16 @@ func (cmd *command) execute() error {
 			} else if path, err := getCmdPath(c); err == nil {
 				fmt.Println(c, "is", path)
 			} else if err == os.ErrNotExist {
-				fmt.Printf("%s: not found\n", c)
+				return fmt.Errorf("%v: not found", c)
 			} else {
-				fmt.Println("error:", err)
+				return fmt.Errorf("error: %v", err)
 			}
 		case "pwd":
-			fmt.Println(os.Getenv("PWD"))
+			wd, err := os.Getwd()
+			if err != nil {
+				return err
+			}
+			fmt.Println(wd)
 		}
 	} else {
 		c := exec.Command(cmd.name, cmd.args...)

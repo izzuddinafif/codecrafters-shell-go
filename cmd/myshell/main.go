@@ -1,3 +1,6 @@
+/*
+This is Afif's Implementation of Shell.
+*/
 package main
 
 import (
@@ -5,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
@@ -59,10 +61,13 @@ func parseUserInput() (*command, error) {
 		return cmd, fmt.Errorf("failed to read input: %s", err)
 	}
 	// TODO: check this later
-	if len(str) < 1 {
-		return cmd, nil
-	}
 	input := strings.Fields(string(str))
+
+	if len(input) == 0 {
+		cmd.name = ""
+		return cmd, nil // ignore empty input
+	}
+
 	cmd.name = input[0]
 	if len(input) > 1 {
 		cmd.args = input[1:]
@@ -82,6 +87,7 @@ func parseUserInput() (*command, error) {
 
 // REPL is Read, Eval and Print Loop function that reads user
 // input, prints the result and wait for the next input.
+/*
 func REPL() (err error) {
 	// Wait for user input
 	input, _, err := bufio.NewReader(os.Stdin).ReadLine()
@@ -131,15 +137,21 @@ func REPL() (err error) {
 	}
 	return nil
 }
+*/
 
+// REPLv2 reimplements the former version with the addition of
+// type command struct integration.
 func REPLv2() {
 	cmd, err := parseUserInput()
+	if len(cmd.name) == 0 {
+		return
+	}
 	if err != nil {
 		if err == os.ErrNotExist {
-			fmt.Printf("%s: command not found\n", cmd.name)
+			fmt.Fprintf(cmd.stderr, "%s: command not found\n", cmd.name)
 			return
 		} else {
-			fmt.Println("error:", cmd.err)
+			fmt.Fprintln(cmd.stderr, "error:", cmd.err)
 			return
 		}
 	}
