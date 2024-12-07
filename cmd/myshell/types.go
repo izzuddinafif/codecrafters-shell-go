@@ -31,6 +31,7 @@ var builtIns = map[string]bool{
 	"echo": true,
 	"type": true,
 	"pwd":  true,
+	"cd":   true,
 }
 
 // TODO: implement this type
@@ -92,14 +93,20 @@ func (cmd *command) execute() error {
 			} else if err == os.ErrNotExist {
 				return fmt.Errorf("%v: not found", c)
 			} else {
-				return fmt.Errorf("error: %v", err)
+				return fmt.Errorf("type: %v", err)
 			}
 		case "pwd":
 			wd, err := os.Getwd()
 			if err != nil {
-				return err
+				return fmt.Errorf("pwd: %v", err)
 			}
 			fmt.Println(wd)
+		case "cd":
+			dir := cmd.args[0]
+			err := os.Chdir(dir)
+			if err != nil {
+				return fmt.Errorf("cd: %s: No such file or directory", dir)
+			}
 		}
 	} else {
 		c := exec.Command(cmd.name, cmd.args...)

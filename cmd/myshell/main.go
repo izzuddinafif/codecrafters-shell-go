@@ -6,7 +6,9 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 )
@@ -58,11 +60,12 @@ func parseUserInput() (*command, error) {
 
 	str, _, err := bufio.NewReader(os.Stdin).ReadLine()
 	if err != nil {
+		if err == io.EOF {
+			return cmd, io.EOF
+		}
 		return cmd, fmt.Errorf("failed to read input: %s", err)
 	}
-	// TODO: check this later
 	input := strings.Fields(string(str))
-
 	if len(input) == 0 {
 		cmd.name = ""
 		return cmd, nil // ignore empty input
@@ -143,26 +146,43 @@ func REPL() (err error) {
 // type command struct integration.
 func REPLv2() {
 	cmd, err := parseUserInput()
-	if len(cmd.name) == 0 {
-		return
-	}
 	if err != nil {
-		if err == os.ErrNotExist {
+		if err == io.EOF {
+			fmt.Println("\n\tHave a good one!")
+			os.Exit(0) // exit when ctrl+d is pressed
+		} else if err == os.ErrNotExist {
 			fmt.Fprintf(cmd.stderr, "%s: command not found\n", cmd.name)
 			return
-		} else {
-			fmt.Fprintln(cmd.stderr, "error:", cmd.err)
-			return
 		}
+		fmt.Fprintln(cmd.stderr, cmd.err)
+		return
+	}
+	if len(cmd.name) == 0 {
+		return
 	}
 
 	cmd.err = cmd.execute()
 	if cmd.err != nil {
-		fmt.Fprintln(cmd.stderr, "error:", cmd.err)
+		fmt.Fprintln(cmd.stderr, cmd.err)
 	}
 }
 
+func handleInterrupt() {
+	sigChan := make(chan os.Signal, 1)
+
+	// listen for ctrl+c keystroke
+	signal.Notify(sigChan, os.Interrupt)
+
+	go func() {
+		for range sigChan {
+			fmt.Fprintln(os.Stdout)
+			fmt.Fprint(os.Stdout, "$ ")
+		}
+	}()
+}
+
 func main() {
+	handleInterrupt() // set up ctrl+c handling
 	for {
 		fmt.Fprint(os.Stdout, "$ ")
 		REPLv2()
