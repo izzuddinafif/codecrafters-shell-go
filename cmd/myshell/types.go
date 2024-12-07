@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -63,7 +64,7 @@ func newCommand() *command {
 
 // execute method executes cmd
 func (cmd *command) execute() error {
-
+	// handle internal command
 	if cmd.internal {
 		switch cmd.name {
 		case "exit":
@@ -102,12 +103,42 @@ func (cmd *command) execute() error {
 			}
 			fmt.Println(wd)
 		case "cd":
-			dir := cmd.args[0]
-			err := os.Chdir(dir)
-			if err != nil {
-				return fmt.Errorf("cd: %s: No such file or directory", dir)
+			cd := func(dir string) error {
+				err := os.Chdir(dir)
+				if err != nil {
+					if err == os.ErrNotExist {
+						return fmt.Errorf("cd: %s: No such file or directory", dir)
+					} else {
+						// other error occurs
+						return fmt.Errorf("cd: %s %v", dir, err)
+					}
+				}
+				return nil
 			}
+			// handle tilde or empty args
+			if len(cmd.args) == 0 {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return err
+				}
+				return cd(homeDir)
+			}
+			if strings.HasPrefix(cmd.args[0], "~") {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return err
+				}
+				targetDir := strings.TrimPrefix(cmd.args[0], "~")
+				dir := filepath.Join(homeDir, targetDir)
+				dir = filepath.Clean(dir)
+				return cd(dir)
+			}
+
+			dir := cmd.args[0]
+			return cd(dir)
 		}
+
+		// handle external command
 	} else {
 		c := exec.Command(cmd.name, cmd.args...)
 		c.Stdin = cmd.stdin

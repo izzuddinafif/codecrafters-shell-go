@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-var d debugger = debugger{enabled: false}
+var d debugger = debugger{enabled: true}
 
 // isExec checks if a file is executable by checking if it's a regular file
 // and if any execute bit is set when masking with 0111 (binary 000000111).
@@ -33,11 +33,11 @@ func getCmdPath(execName string) (string, error) {
 		return "", fmt.Errorf("PATH environment variable is not set")
 	}
 	paths := strings.Split(pathEnv, string(os.PathListSeparator))
-	d.print("paths: ", strings.Join(paths, " "))
+	// d.print("paths: ", strings.Join(paths, " "))
 
 	for _, dir := range paths {
 		fullPath := filepath.Join(dir, execName)
-		d.printf("looking for %s in %s", filepath.Base(fullPath), filepath.Dir(fullPath))
+		// d.printf("looking for %s in %s", filepath.Base(fullPath), filepath.Dir(fullPath))
 
 		info, err := os.Stat(fullPath)
 		if err == nil {
