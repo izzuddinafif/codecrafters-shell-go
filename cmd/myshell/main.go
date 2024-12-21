@@ -7,13 +7,158 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
-var d debugger = debugger{enabled: true}
+type debugger struct {
+	enabled bool
+}
+
+var d debugger = debugger{enabled: false}
+
+func (d debugger) print(a ...interface{}) {
+	if d.enabled {
+		log.Print(a...)
+	}
+}
+
+func (d debugger) printf(format string, a ...interface{}) {
+	if d.enabled {
+		log.Printf(format, a...)
+	}
+}
+
+var builtIns = map[string]struct{}{
+	"exit": {},
+	"echo": {},
+	"type": {},
+	"pwd":  {},
+	"cd":   {},
+}
+
+type command struct {
+	name     string
+	args     []string
+	internal bool
+	path     string
+	err      error
+	stdin    io.Reader
+	stdout   io.Writer
+	stderr   io.Writer
+}
+
+func newCommand() *command {
+	return &command{
+		name:     "",
+		args:     []string{},
+		internal: false,
+		path:     "",
+		err:      nil,
+
+		// Default to standard input, output, and error
+		stdin:  os.Stdin,
+		stdout: os.Stdout,
+		stderr: os.Stderr,
+	}
+}
+
+func (cmd *command) execute() error {
+	// handle internal command
+	if cmd.internal {
+		switch cmd.name {
+		case "exit":
+			if len(cmd.args) > 1 {
+				return fmt.Errorf("exit: too many arguments")
+			}
+			if len(cmd.args) == 2 {
+				code, err := strconv.Atoi(cmd.args[0])
+				if err != nil || code > 255 || code < 0 {
+					return fmt.Errorf("exit: invalid argument")
+				}
+				os.Exit(code)
+			}
+			os.Exit(0)
+		case "echo":
+			echoed := strings.Join(cmd.args, " ")
+			fmt.Println(echoed)
+		case "type":
+			if len(cmd.args) < 1 {
+				return fmt.Errorf("type: missing operand")
+			}
+			for _, c := range cmd.args {
+				if _, isBuiltin := builtIns[c]; isBuiltin {
+					fmt.Println(c, "is a shell builtin")
+				} else if path, err := getCmdPath(c); err == nil {
+					fmt.Println(c, "is", path)
+				} else if err == os.ErrNotExist {
+					return fmt.Errorf("%v: not found", c)
+				} else {
+					return fmt.Errorf("type: %v", err)
+				}
+			}
+		case "pwd":
+			wd, err := os.Getwd()
+			if err != nil {
+				return fmt.Errorf("pwd: %v", err)
+			}
+			fmt.Println(wd)
+		case "cd":
+			cd := func(dir string) error {
+				err := os.Chdir(dir)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return fmt.Errorf("cd: %v: No such file or directory", dir)
+					} else {
+						// other error occurs
+						return fmt.Errorf("cd: %s: %v", dir, err)
+					}
+				}
+				return nil
+			}
+			// handle tilde or empty args
+			if len(cmd.args) == 0 {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return err
+				}
+				return cd(homeDir)
+			}
+			if strings.HasPrefix(cmd.args[0], "~") {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return err
+				}
+				targetDir := strings.TrimPrefix(cmd.args[0], "~")
+				dir := filepath.Join(homeDir, targetDir)
+				dir = filepath.Clean(dir)
+				return cd(dir)
+			}
+
+			dir := cmd.args[0]
+			return cd(dir)
+		}
+
+		// handle external command
+	} else {
+		c := exec.Command(cmd.name, cmd.args...)
+		c.Stdin = cmd.stdin
+		c.Stdout = cmd.stdout
+		c.Stderr = cmd.stderr
+
+		cmd.err = c.Run()
+		if cmd.err != nil {
+			return fmt.Errorf("%s: %v", cmd.name, cmd.err)
+		}
+	}
+
+	return nil
+}
 
 // isExec checks if a file is executable by checking if it's a regular file
 // and if any execute bit is set when masking with 0111 (binary 000000111).
@@ -55,39 +200,92 @@ func getCmdPath(execName string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+// TODO: Add better handling for missing closing single quote (newline support)
+// handleArgs splits a string of arguments into a slice, preserving quoted
+// sections as single arguments. Returns an error if there is missing closing
+// quote, for now.
+func handleArgs(args string) ([]string, error) {
+	var argsList []string
+	var buf strings.Builder
+	inQuote := false
+
+	for _, c := range args {
+		d.print("switching: ", string(c))
+		switch {
+		case c == '\'':
+			if inQuote {
+				inQuote = false
+				d.print("appending inside quote: ", buf.String())
+				argsList = append(argsList, buf.String())
+				buf.Reset()
+			} else {
+				inQuote = true
+			}
+		case c == ' ':
+			if inQuote {
+				d.print("writing space")
+				buf.WriteRune(c)
+			} else if buf.Len() > 0 && !inQuote {
+				d.print("appending outside quote: ", buf.String())
+				argsList = append(argsList, buf.String())
+				buf.Reset()
+			}
+		default:
+			d.print("writing: ", string(c))
+			buf.WriteRune(c)
+		}
+	}
+	if inQuote {
+		return nil, fmt.Errorf("missing closing single quote")
+	}
+	if buf.Len() > 0 {
+		argsList = append(argsList, buf.String())
+	}
+	return argsList, nil
+}
+
+// parseUserInput reads user input, split it into a command and arguments,
+// then determines if the command is built in or external, if it's external,
+// gets the command's path via getCmdPath. Handles quoting via handleArgs.
 func parseUserInput() (*command, error) {
 	cmd := newCommand()
 
-	str, _, err := bufio.NewReader(os.Stdin).ReadLine()
+	readBytes, _, err := bufio.NewReader(os.Stdin).ReadLine()
 	if err != nil {
 		if err == io.EOF {
 			return cmd, io.EOF
 		}
 		return cmd, fmt.Errorf("failed to read input: %s", err)
 	}
-	input := strings.Fields(string(str))
-	if len(input) == 0 {
-		cmd.name = ""
+
+	if len(readBytes) == 0 {
 		return cmd, nil // ignore empty input
 	}
+	inputField := strings.Fields(string(readBytes))
 
-	cmd.name = input[0]
-	if len(input) > 1 {
-		cmd.args = input[1:]
+	if len(inputField) == 0 {
+		return cmd, nil // ignore empty input
+	}
+	readString := string(readBytes)
+	cmd.name = inputField[0]
+	if len(readString) > 0 {
+		cmd.args, cmd.err = handleArgs(readString)
+		if cmd.err != nil {
+			return cmd, cmd.err
+		}
 	}
 
 	_, cmd.internal = builtIns[cmd.name]
-
 	if !cmd.internal {
 		cmd.path, cmd.err = getCmdPath(cmd.name)
 		if cmd.err != nil {
 			return cmd, cmd.err
 		}
 	}
-
 	return cmd, nil
 }
 
+// !!! DEPRECATED !!!
 // REPL is Read, Eval and Print Loop function that reads user
 // input, prints the result and wait for the next input.
 /*
@@ -148,13 +346,13 @@ func REPLv2() {
 	cmd, err := parseUserInput()
 	if err != nil {
 		if err == io.EOF {
-			fmt.Println("\n\tHave a good one!")
+			fmt.Println("\nHave a good one!👋")
 			os.Exit(0) // exit when ctrl+d is pressed
 		} else if err == os.ErrNotExist {
 			fmt.Fprintf(cmd.stderr, "%s: command not found\n", cmd.name)
 			return
 		}
-		fmt.Fprintln(cmd.stderr, cmd.err)
+		fmt.Fprintln(cmd.stderr, err)
 		return
 	}
 	if len(cmd.name) == 0 {
@@ -167,6 +365,7 @@ func REPLv2() {
 	}
 }
 
+// handleInterrupt handles interrupt signal with custom behaviour
 func handleInterrupt() {
 	sigChan := make(chan os.Signal, 1)
 
