@@ -258,18 +258,17 @@ func parseUserInput() (*command, error) {
 		return cmd, fmt.Errorf("failed to read input: %s", err)
 	}
 
-	if len(readBytes) == 0 {
-		return cmd, nil // ignore empty input
-	}
-	inputField := strings.Fields(string(readBytes))
-
-	if len(inputField) == 0 {
-		return cmd, nil // ignore empty input
-	}
 	readString := string(readBytes)
-	cmd.name = inputField[0]
-	if len(readString) > 0 {
-		cmd.args, cmd.err = handleArgs(readString)
+	args := ""
+	cmd.name = readString
+	if sepInd := strings.Index(readString, " "); sepInd != -1 {
+		cmd.name = readString[:sepInd]
+		if len(readString) > sepInd+1 {
+			args = strings.TrimSpace(readString[sepInd+1:])
+		}
+	}
+	if len(args) > 0 {
+		cmd.args, cmd.err = handleArgs(args)
 		if cmd.err != nil {
 			return cmd, cmd.err
 		}
