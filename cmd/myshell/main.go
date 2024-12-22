@@ -207,25 +207,53 @@ func getCmdPath(execName string) (string, error) {
 func handleArgs(args string) ([]string, error) {
 	var argsList []string
 	var buf strings.Builder
-	inQuote := false
+	inSingleQuote := false
+	inDoubleQuote := false
+	isEscaped := false
 
 	for _, c := range args {
 		d.print("switching: ", string(c))
 		switch {
+		case c == '"':
+			if inDoubleQuote {
+				if isEscaped {
+					isEscaped = false
+					buf.WriteRune(c)
+				} else {
+					inDoubleQuote = false
+					argsList = append(argsList, buf.String())
+					buf.Reset()
+				}
+			} else {
+				inDoubleQuote = true
+			}
+		case c == '\\':
+			if inDoubleQuote {
+				if isEscaped {
+					isEscaped = false
+					buf.WriteRune(c)
+				} else {
+					isEscaped = true
+				}
+			}
+		// case c == ''
 		case c == '\'':
-			if inQuote {
-				inQuote = false
+			if inDoubleQuote {
+				isEscaped = false
+				buf.WriteRune(c)
+			} else if inSingleQuote {
+				inSingleQuote = false
 				d.print("appending inside quote: ", buf.String())
 				argsList = append(argsList, buf.String())
 				buf.Reset()
 			} else {
-				inQuote = true
+				inSingleQuote = true
 			}
 		case c == ' ':
-			if inQuote {
+			if inDoubleQuote || inSingleQuote {
 				d.print("writing space")
 				buf.WriteRune(c)
-			} else if buf.Len() > 0 && !inQuote {
+			} else if buf.Len() > 0 && !inSingleQuote && !inDoubleQuote {
 				d.print("appending outside quote: ", buf.String())
 				argsList = append(argsList, buf.String())
 				buf.Reset()
@@ -235,8 +263,8 @@ func handleArgs(args string) ([]string, error) {
 			buf.WriteRune(c)
 		}
 	}
-	if inQuote {
-		return nil, fmt.Errorf("missing closing single quote")
+	if inSingleQuote || inDoubleQuote {
+		return nil, fmt.Errorf("missing closing quote")
 	}
 	if buf.Len() > 0 {
 		argsList = append(argsList, buf.String())
@@ -245,7 +273,7 @@ func handleArgs(args string) ([]string, error) {
 }
 
 // parseUserInput reads user input, split it into a command and arguments,
-// then determines if the command is built in or external, if it's external,
+// then determines if the command is built-in or external, if it's external,
 // gets the command's path via getCmdPath. Handles quoting via handleArgs.
 func parseUserInput() (*command, error) {
 	cmd := newCommand()
