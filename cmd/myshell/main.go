@@ -20,7 +20,7 @@ type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: false}
+var d debugger = debugger{enabled: true}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
@@ -200,6 +200,10 @@ func getCmdPath(execName string) (string, error) {
 	return "", os.ErrNotExist
 }
 
+func isEscapableChar(char byte) bool {
+	return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`'
+}
+
 // TODO: Add better handling for missing closing single quote (newline support)
 // handleArgs splits a string of arguments into a slice, preserving quoted
 // sections as single arguments. Returns an error if there is missing closing
@@ -211,8 +215,8 @@ func handleArgs(args string) ([]string, error) {
 	inDoubleQuote := false
 	isEscaped := false
 
-	for _, c := range args {
-		d.print("switching: ", string(c))
+	for i, c := range args {
+		// d.print("switching: ", string(c))
 		switch {
 		case c == '"':
 			if inDoubleQuote {
@@ -229,21 +233,23 @@ func handleArgs(args string) ([]string, error) {
 			}
 		case c == '\\':
 			if inDoubleQuote {
-				if isEscaped {
-					isEscaped = false
-					buf.WriteRune(c)
+				if len(args) > i+1 && isEscapableChar(args[i+1]) {
+					isEscaped = true
 				} else {
+					buf.WriteRune(c)
+				}
+			} else if !inSingleQuote {
+				if len(args) > i+1 && (isEscapableChar(args[i+1]) || args[i+1] == ' ') {
 					isEscaped = true
 				}
 			}
-		// case c == ''
 		case c == '\'':
 			if inDoubleQuote {
 				isEscaped = false
 				buf.WriteRune(c)
 			} else if inSingleQuote {
 				inSingleQuote = false
-				d.print("appending inside quote: ", buf.String())
+				// d.print("appending inside quote: ", buf.String())
 				argsList = append(argsList, buf.String())
 				buf.Reset()
 			} else {
@@ -251,15 +257,20 @@ func handleArgs(args string) ([]string, error) {
 			}
 		case c == ' ':
 			if inDoubleQuote || inSingleQuote {
-				d.print("writing space")
+				// d.print("writing space")
 				buf.WriteRune(c)
-			} else if buf.Len() > 0 && !inSingleQuote && !inDoubleQuote {
-				d.print("appending outside quote: ", buf.String())
-				argsList = append(argsList, buf.String())
-				buf.Reset()
+			} else if !inSingleQuote && !inDoubleQuote {
+				if isEscaped {
+					isEscaped = false
+					buf.WriteRune(c)
+				} else if buf.Len() > 0 {
+					// d.print("appending outside quote: ", buf.String())
+					argsList = append(argsList, buf.String())
+					buf.Reset()
+				}
 			}
 		default:
-			d.print("writing: ", string(c))
+			// d.print("writing: ", string(c))
 			buf.WriteRune(c)
 		}
 	}
@@ -302,6 +313,7 @@ func parseUserInput() (*command, error) {
 		}
 	}
 
+	d.printf("%v", cmd)
 	_, cmd.internal = builtIns[cmd.name]
 	if !cmd.internal {
 		cmd.path, cmd.err = getCmdPath(cmd.name)
