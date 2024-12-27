@@ -88,8 +88,8 @@ func (cmd *command) execute() error {
 			os.Exit(0)
 		case "echo":
 			echoed := strings.Join(cmd.args, " ")
-			d.print("echoed: ", echoed)
-			fmt.Println(echoed)
+			// d.print("echoed: ", echoed)
+			fmt.Fprintln(cmd.stdout, echoed)
 		case "type":
 			if len(cmd.args) < 1 {
 				return fmt.Errorf("type: missing operand")
@@ -155,11 +155,13 @@ func (cmd *command) execute() error {
 		c := exec.Command(cmd.name, cmd.args...)
 		c.Stdin = cmd.stdin
 		c.Stdout = cmd.stdout
+		d.printf("cmd stdout: %v", c.Stdout)
 		c.Stderr = cmd.stderr
+		d.printf("cmd stderr: %v", c.Stderr)
 
 		cmd.err = c.Run()
 		if cmd.err != nil {
-			return fmt.Errorf("%s: %v", cmd.name, cmd.err)
+			return nil //fmt.Errorf("%s: %v", cmd.name, cmd.err)
 		}
 	}
 
@@ -214,7 +216,7 @@ func isEscapableChar(char byte) bool {
 // handleArgs splits a string of arguments into a slice, preserving quoted
 // sections as single arguments. Returns an error if there is missing closing
 // quote, for now.
-func handleArgs(args string) ([]string, error) {
+func handleArgs(cmd *command, args string) ([]string, error) {
 	var argsList []string
 	var buf strings.Builder
 	inSingleQuote := false
@@ -224,6 +226,37 @@ func handleArgs(args string) ([]string, error) {
 	for i, c := range args {
 		// d.print("switching: ", string(c))
 		switch {
+		// handle output redirections
+		case c == '>' || (c == '1' && len(args) > i+1 && args[i+1] == '>'):
+			var uses1 bool
+			if c == '1' && len(args) > i+1 && args[i+1] == '>' {
+				uses1 = true
+			}
+			if inDoubleQuote || inSingleQuote {
+				buf.WriteRune(c)
+			} else {
+				d.print("redirecting: ", argsList)
+				if uses1 && len(args) <= i+2 {
+					return nil, fmt.Errorf("invalid redirection: no specified target")
+				} else if len(args) <= i+1 {
+					return nil, fmt.Errorf("invalid redirection: no specified target")
+				}
+				if buf.Len() > 0 {
+					argsList = append(argsList, buf.String())
+					buf.Reset()
+				}
+				var target string
+				if uses1 {
+					target = filepath.Clean(strings.TrimSpace(args[i+2:]))
+				} else {
+					target = filepath.Clean(strings.TrimSpace(args[i+1:]))
+				}
+				err := redirect(cmd, target)
+				if err != nil {
+					return nil, err
+				}
+				return argsList, nil
+			}
 		case c == '"':
 			if inDoubleQuote {
 				if isEscaped {
@@ -320,6 +353,17 @@ func handleArgs(args string) ([]string, error) {
 	return argsList, nil
 }
 
+// redirect redirects a command's stdout to a chosen file
+func redirect(cmd *command, target string) error {
+	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return err
+	}
+
+	cmd.stdout = f
+	return nil
+}
+
 // parseUserInput reads user input, split it into a command and arguments,
 // then determines if the command is built-in or external, if it's external,
 // gets the command's path via getCmdPath. Handles quoting via handleArgs.
@@ -338,6 +382,7 @@ func parseUserInput() (*command, error) {
 	}
 	readString := string(readBytes)
 	input := strings.TrimLeft(readString, " \t")
+
 	var parts []string
 	if input[0] == '"' || input[0] == '\'' {
 		ind := strings.Index(input[1:], string(input[0]))
@@ -349,13 +394,14 @@ func parseUserInput() (*command, error) {
 	} else {
 		parts = strings.SplitN(input, " ", 2)
 	}
+
 	cmd.name = parts[0]
 	d.print(parts)
 
 	if len(parts) > 1 {
 		args := parts[1]
 		args = strings.TrimLeft(args, " \t")
-		cmd.args, cmd.err = handleArgs(args)
+		cmd.args, cmd.err = handleArgs(cmd, args)
 		if cmd.err != nil {
 			return cmd, cmd.err
 		}
