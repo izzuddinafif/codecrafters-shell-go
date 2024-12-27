@@ -226,8 +226,10 @@ func handleArgs(args string) ([]string, error) {
 				if isEscaped {
 					isEscaped = false
 					buf.WriteRune(c)
+					fmt.Print(string(c))
 				} else {
 					inDoubleQuote = false
+					// only append if there is a space after the closing quote
 					if len(args) > i+1 && args[i+1] == ' ' {
 						argsList = append(argsList, buf.String())
 						buf.Reset()
@@ -235,10 +237,12 @@ func handleArgs(args string) ([]string, error) {
 				}
 			} else if inSingleQuote {
 				buf.WriteRune(c)
+				fmt.Print(string(c))
 			} else {
 				if isEscaped {
 					isEscaped = false
 					buf.WriteRune(c)
+					fmt.Print(string(c))
 				} else {
 					inDoubleQuote = true
 				}
@@ -247,13 +251,21 @@ func handleArgs(args string) ([]string, error) {
 			if inDoubleQuote {
 				if inSingleQuote {
 					buf.WriteRune(c)
+					fmt.Print(string(c))
+				} else if isEscaped {
+					isEscaped = false
+					buf.WriteRune(c)
+					fmt.Print(string(c))
 				} else if len(args) > i+1 && isEscapableChar(args[i+1]) {
 					isEscaped = true
+					// d.print("encountering an escape backslash")
 				} else {
 					buf.WriteRune(c)
+					fmt.Print(string(c))
 				}
 			} else if inSingleQuote {
 				buf.WriteRune(c)
+				fmt.Print(string(c))
 			} else {
 				if len(args) > i+1 && (isEscapableChar(args[i+1]) || args[i+1] == ' ') {
 					isEscaped = true
@@ -263,6 +275,7 @@ func handleArgs(args string) ([]string, error) {
 			if inDoubleQuote {
 				isEscaped = false
 				buf.WriteRune(c)
+				fmt.Print(string(c))
 			} else if inSingleQuote {
 				inSingleQuote = false
 				// d.print("appending inside quote: ", buf.String())
@@ -275,10 +288,12 @@ func handleArgs(args string) ([]string, error) {
 			if inDoubleQuote || inSingleQuote {
 				// d.print("writing space")
 				buf.WriteRune(c)
+				fmt.Print(string(c))
 			} else if !inSingleQuote && !inDoubleQuote {
 				if isEscaped {
 					isEscaped = false
 					buf.WriteRune(c)
+					fmt.Print(string(c))
 				} else if buf.Len() > 0 {
 					// d.print("appending outside quote: ", buf.String())
 					argsList = append(argsList, buf.String())
@@ -288,6 +303,7 @@ func handleArgs(args string) ([]string, error) {
 		default:
 			// d.print("writing: ", string(c))
 			buf.WriteRune(c)
+			fmt.Print(string(c))
 		}
 	}
 	if inSingleQuote || inDoubleQuote {
