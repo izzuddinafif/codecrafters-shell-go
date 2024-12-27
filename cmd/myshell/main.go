@@ -228,8 +228,10 @@ func handleArgs(args string) ([]string, error) {
 					buf.WriteRune(c)
 				} else {
 					inDoubleQuote = false
-					argsList = append(argsList, buf.String())
-					buf.Reset()
+					if len(args) > i+1 && args[i+1] == ' ' {
+						argsList = append(argsList, buf.String())
+						buf.Reset()
+					}
 				}
 			} else if inSingleQuote {
 				buf.WriteRune(c)
