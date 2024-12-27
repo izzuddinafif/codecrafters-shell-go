@@ -235,11 +235,14 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 			if c == '2' && len(args) > i+1 && args[i+1] == '>' {
 				uses2 = true
 			}
+			if c == '>' && len(args) > i+1 && args[i+1] == '>' {
+				appending = true
+			}
 			if inDoubleQuote || inSingleQuote {
 				buf.WriteRune(c)
 			} else {
 				d.print("redirecting: ", argsList)
-				if (uses1 || uses2) && len(args) <= i+2 {
+				if (uses1 || uses2 || appending) && len(args) <= i+2 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
 				} else if len(args) <= i+1 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
@@ -249,7 +252,7 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 					buf.Reset()
 				}
 				var target string
-				if uses1 || uses2 {
+				if uses1 || uses2 || appending {
 					target = filepath.Clean(strings.TrimSpace(args[i+2:]))
 				} else {
 					target = filepath.Clean(strings.TrimSpace(args[i+1:]))
