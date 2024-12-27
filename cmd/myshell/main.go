@@ -20,7 +20,7 @@ type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: false}
+var d debugger = debugger{enabled: true}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
@@ -35,6 +35,8 @@ func (d debugger) printf(format string, a ...interface{}) {
 }
 
 var builtIns = map[string]struct{}{
+	// using empty struct to save memory,
+	// because it takes 0 bytes but still a valid map key
 	"exit": {},
 	"echo": {},
 	"type": {},
@@ -309,6 +311,7 @@ func handleArgs(args string) ([]string, error) {
 		}
 	}
 	if inSingleQuote || inDoubleQuote {
+		d.print(argsList)
 		return nil, fmt.Errorf("missing closing quote")
 	}
 	if buf.Len() > 0 {
@@ -335,8 +338,19 @@ func parseUserInput() (*command, error) {
 	}
 	readString := string(readBytes)
 	input := strings.TrimLeft(readString, " \t")
-	parts := strings.SplitN(input, " ", 2)
+	var parts []string
+	if input[0] == '"' || input[0] == '\'' {
+		ind := strings.Index(input[1:], string(input[0]))
+		if ind == -1 {
+			return cmd, fmt.Errorf("missing closing quote")
+		}
+		d.print(input)
+		parts = strings.SplitN(input[1:], string(input[0]), 2)
+	} else {
+		parts = strings.SplitN(input, " ", 2)
+	}
 	cmd.name = parts[0]
+	d.print(parts)
 
 	if len(parts) > 1 {
 		args := parts[1]
@@ -347,7 +361,6 @@ func parseUserInput() (*command, error) {
 		}
 	}
 
-	d.printf("%v", cmd)
 	_, cmd.internal = builtIns[cmd.name]
 	if !cmd.internal {
 		if strings.Contains(cmd.name, "/") {
