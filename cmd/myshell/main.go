@@ -228,7 +228,7 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 		switch {
 		// handle output redirections
 		case c == '>' || (c == '1' && len(args) > i+1 && args[i+1] == '>') || (c == '2' && len(args) > i+1 && args[i+1] == '>'):
-			var uses1, uses2 bool
+			var uses1, uses2, appending bool
 			if c == '1' && len(args) > i+1 && args[i+1] == '>' {
 				uses1 = true
 			}
@@ -265,7 +265,7 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 					descriptor = 1
 				}
 
-				err = redirect(cmd, target, descriptor)
+				err = redirect(cmd, target, descriptor, appending)
 				if err != nil {
 					return nil, err
 				}
@@ -368,10 +368,18 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 }
 
 // redirect redirects a command's stdout to a chosen file
-func redirect(cmd *command, target string, desc int) error {
-	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return err
+func redirect(cmd *command, target string, desc int, appending bool) (err error) {
+	var f *os.File
+	if appending {
+		f, err = os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+		if err != nil {
+			return err
+		}
+	} else {
+		f, err = os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return err
+		}
 	}
 
 	switch desc {
