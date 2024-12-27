@@ -233,22 +233,29 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 				uses1 = true
 				if len(args) > i+2 && args[i+2] == '>' {
 					appending = true
+					d.print("1>>")
+				} else {
+
+					d.print("1>")
 				}
-			}
-			if c == '2' && len(args) > i+1 && args[i+1] == '>' {
+			} else if c == '2' && len(args) > i+1 && args[i+1] == '>' {
 				uses2 = true
 				if len(args) > i+2 && args[i+2] == '>' {
 					appending = true
+					d.print("2>>")
+				} else {
+
+					d.print("2>")
 				}
-			}
-			if c == '>' && len(args) > i+1 && args[i+1] == '>' {
+			} else if c == '>' && len(args) > i+1 && args[i+1] == '>' {
 				appending = true
+				d.print(">")
 			}
 			if inDoubleQuote || inSingleQuote {
 				buf.WriteRune(c)
 			} else {
 				d.print("redirecting: ", argsList)
-				if (uses1 || uses2 || (appending && !(uses1 || uses2))) && len(args) <= i+2 {
+				if ((appending && !(uses1 || uses2)) || (uses1 && !appending) || (uses2 && !appending)) && len(args) <= i+2 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
 				} else if (uses1 || uses2) && appending && len(args) <= i+3 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
@@ -260,12 +267,15 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 					buf.Reset()
 				}
 				var target string
-				if uses1 || uses2 || (appending && !(uses1 || uses2)) {
+				if (appending && !(uses1 || uses2)) || (uses1 && !appending) || (uses2 && !appending) {
 					target = filepath.Clean(strings.TrimSpace(args[i+2:]))
+					d.print("target use or append: ", target)
 				} else if (uses1 || uses2) && appending {
 					target = filepath.Clean(strings.TrimSpace(args[i+3:]))
+					d.print("target use and append: ", target)
 				} else {
 					target = filepath.Clean(strings.TrimSpace(args[i+1:]))
+					d.print("target: ", target)
 				}
 				var descriptor int
 				var err error
@@ -383,6 +393,7 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 // redirect redirects a command's stdout to a chosen file
 func redirect(cmd *command, target string, desc int, appending bool) (err error) {
 	var f *os.File
+	d.print("opening: ", target)
 	if appending {
 		f, err = os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
