@@ -76,7 +76,7 @@ func (cmd *command) execute() error {
 			if len(cmd.args) > 1 {
 				return fmt.Errorf("exit: too many arguments")
 			}
-			if len(cmd.args) == 2 {
+			if len(cmd.args) == 1 {
 				code, err := strconv.Atoi(cmd.args[0])
 				if err != nil || code > 255 || code < 0 {
 					return fmt.Errorf("exit: invalid argument")
@@ -109,6 +109,9 @@ func (cmd *command) execute() error {
 			}
 			fmt.Println(wd)
 		case "cd":
+			if len(cmd.args) > 1 {
+				return fmt.Errorf("cd: too many arguments")
+			}
 			cd := func(dir string) error {
 				err := os.Chdir(dir)
 				if err != nil {
@@ -228,17 +231,23 @@ func handleArgs(args string) ([]string, error) {
 					argsList = append(argsList, buf.String())
 					buf.Reset()
 				}
+			} else if inSingleQuote {
+				buf.WriteRune(c)
 			} else {
 				inDoubleQuote = true
 			}
 		case c == '\\':
 			if inDoubleQuote {
-				if len(args) > i+1 && isEscapableChar(args[i+1]) {
+				if inSingleQuote {
+					buf.WriteRune(c)
+				} else if len(args) > i+1 && isEscapableChar(args[i+1]) {
 					isEscaped = true
 				} else {
 					buf.WriteRune(c)
 				}
-			} else if !inSingleQuote {
+			} else if inSingleQuote {
+				buf.WriteRune(c)
+			} else {
 				if len(args) > i+1 && (isEscapableChar(args[i+1]) || args[i+1] == ' ') {
 					isEscaped = true
 				}
@@ -316,9 +325,13 @@ func parseUserInput() (*command, error) {
 	d.printf("%v", cmd)
 	_, cmd.internal = builtIns[cmd.name]
 	if !cmd.internal {
-		cmd.path, cmd.err = getCmdPath(cmd.name)
-		if cmd.err != nil {
-			return cmd, cmd.err
+		if strings.Contains(cmd.name, "/") {
+			cmd.path = cmd.name
+		} else {
+			cmd.path, cmd.err = getCmdPath(cmd.name)
+			if cmd.err != nil {
+				return cmd, cmd.err
+			}
 		}
 	}
 	return cmd, nil
