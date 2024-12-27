@@ -234,7 +234,12 @@ func handleArgs(args string) ([]string, error) {
 			} else if inSingleQuote {
 				buf.WriteRune(c)
 			} else {
-				inDoubleQuote = true
+				if isEscaped {
+					isEscaped = false
+					buf.WriteRune(c)
+				} else {
+					inDoubleQuote = true
+				}
 			}
 		case c == '\\':
 			if inDoubleQuote {
