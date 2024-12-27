@@ -155,9 +155,9 @@ func (cmd *command) execute() error {
 		c := exec.Command(cmd.name, cmd.args...)
 		c.Stdin = cmd.stdin
 		c.Stdout = cmd.stdout
-		d.printf("cmd stdout: %v", c.Stdout)
+		// d.printf("cmd stdout: %v", c.Stdout)
 		c.Stderr = cmd.stderr
-		d.printf("cmd stderr: %v", c.Stderr)
+		// d.printf("cmd stderr: %v", c.Stderr)
 
 		cmd.err = c.Run()
 		if cmd.err != nil {
@@ -227,16 +227,19 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 		// d.print("switching: ", string(c))
 		switch {
 		// handle output redirections
-		case c == '>' || (c == '1' && len(args) > i+1 && args[i+1] == '>'):
-			var uses1 bool
+		case c == '>' || (c == '1' && len(args) > i+1 && args[i+1] == '>') || (c == '2' && len(args) > i+1 && args[i+1] == '>'):
+			var uses1, uses2 bool
 			if c == '1' && len(args) > i+1 && args[i+1] == '>' {
 				uses1 = true
+			}
+			if c == '2' && len(args) > i+1 && args[i+1] == '>' {
+				uses2 = true
 			}
 			if inDoubleQuote || inSingleQuote {
 				buf.WriteRune(c)
 			} else {
 				d.print("redirecting: ", argsList)
-				if uses1 && len(args) <= i+2 {
+				if (uses1 || uses2) && len(args) <= i+2 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
 				} else if len(args) <= i+1 {
 					return nil, fmt.Errorf("invalid redirection: no specified target")
@@ -246,12 +249,23 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 					buf.Reset()
 				}
 				var target string
-				if uses1 {
+				if uses1 || uses2 {
 					target = filepath.Clean(strings.TrimSpace(args[i+2:]))
 				} else {
 					target = filepath.Clean(strings.TrimSpace(args[i+1:]))
 				}
-				err := redirect(cmd, target)
+				var descriptor int
+				var err error
+				if uses1 || uses2 {
+					descriptor, err = strconv.Atoi(string(c))
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					descriptor = 1
+				}
+
+				err = redirect(cmd, target, descriptor)
 				if err != nil {
 					return nil, err
 				}
@@ -354,13 +368,18 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 }
 
 // redirect redirects a command's stdout to a chosen file
-func redirect(cmd *command, target string) error {
+func redirect(cmd *command, target string, desc int) error {
 	f, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}
 
-	cmd.stdout = f
+	switch desc {
+	case 1:
+		cmd.stdout = f
+	case 2:
+		cmd.stderr = f
+	}
 	return nil
 }
 
