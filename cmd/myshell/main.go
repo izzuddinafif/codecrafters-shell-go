@@ -361,9 +361,13 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 				buf.WriteRune(c)
 			} else if inSingleQuote {
 				inSingleQuote = false
-				// d.print("appending inside quote: ", buf.String())
-				argsList = append(argsList, buf.String())
-				buf.Reset()
+				// only append if there is a space after the closing quote
+				if len(args) > i+1 && args[i+1] == ' ' || i == len(args)-1 {
+					d.print("appending inside quote: ", buf.String())
+					argsList = append(argsList, buf.String())
+					d.print(argsList)
+					buf.Reset()
+				}
 			} else if isEscaped {
 				isEscaped = false
 				buf.WriteRune(c)
