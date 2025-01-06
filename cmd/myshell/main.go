@@ -211,7 +211,7 @@ func getCmdPath(execName string) (string, error) {
 }
 
 func isEscapableChar(char byte) bool {
-	return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`'
+	return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`' || char == '\''
 }
 
 // TODO: Add better handling for missing closing single quote (newline support)
@@ -334,7 +334,7 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 
 				} else if len(args) > i+1 && isEscapableChar(args[i+1]) {
 					isEscaped = true
-					// d.print("encountering an escape backslash")
+					d.print("encountering an escape backslash")
 				} else {
 					buf.WriteRune(c)
 
@@ -357,6 +357,9 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 				// d.print("appending inside quote: ", buf.String())
 				argsList = append(argsList, buf.String())
 				buf.Reset()
+			} else if isEscaped {
+				isEscaped = false
+				buf.WriteRune(c)
 			} else {
 				inSingleQuote = true
 			}
