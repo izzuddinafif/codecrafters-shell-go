@@ -214,9 +214,13 @@ func isEscapableChar(char byte, inSingleQuote bool, inDoubleQuote bool) bool {
 	if inSingleQuote {
 		// Inside single quotes, nothing is escapable
 		return false
+	} else if inDoubleQuote {
+
+		// Inside double quotes, single quotes are not escapable
+		return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`'
+	} else {
+		return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`' || char == '\''
 	}
-	// Inside double quotes, single quotes are not escapable
-	return char == '\\' || char == '$' || char == '"' || char == '\n' || char == '`'
 }
 
 // TODO: Add better handling for missing closing single quote (newline support)
