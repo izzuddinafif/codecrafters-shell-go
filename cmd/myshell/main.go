@@ -349,9 +349,14 @@ func handleArgs(cmd *command, args string) ([]string, error) {
 			}
 		case c == '\'':
 			if inDoubleQuote {
-				isEscaped = false
-				buf.WriteRune(c)
-
+				if inSingleQuote {
+					inSingleQuote = false
+					buf.WriteRune(c)
+				} else {
+					isEscaped = false
+					inSingleQuote = true
+					buf.WriteRune(c)
+				}
 			} else if inSingleQuote {
 				inSingleQuote = false
 				// d.print("appending inside quote: ", buf.String())
