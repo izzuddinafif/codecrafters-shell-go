@@ -34,6 +34,8 @@ func (d debugger) printf(format string, a ...interface{}) {
 	}
 }
 
+// Maps provide constant-time complexity (O(1)) for key lookups
+// instead of slices or array that require linear-time complexity (O(n))
 var builtIns = map[string]struct{}{
 	// using empty struct to save memory,
 	// because it takes 0 bytes but still a valid map key
