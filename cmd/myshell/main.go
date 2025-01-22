@@ -122,6 +122,7 @@ func (s *shell) readInput() string {
 					}
 				}
 				if matchCount > 1 {
+					d.print("\r\n")
 					d.print("more than 1 match found")
 					d.printf("%v", matches)
 					s.redrawLine()
@@ -168,7 +169,7 @@ func (s *shell) executeCommand(cmd *command) {
 	if cmd.internal {
 		cmd.err = cmd.execute(s) // builtins use raw mode
 		if cmd.err != nil {
-			fmt.Fprint(cmd.stdout, cmd.err, "\r\n")
+			fmt.Fprint(cmd.stderr, cmd.err, "\r\n")
 		}
 	} else {
 		d.print("executing external command")
@@ -176,7 +177,7 @@ func (s *shell) executeCommand(cmd *command) {
 		defer term.MakeRaw(s.stdinFD)       // restore raw mode
 		cmd.err = cmd.execute(s)
 		if cmd.err != nil {
-			// fmt.Fprint(cmd.stdout, cmd.err, "\r\n")
+			// fmt.Fprint(cmd.stdout, cmd.err, "\r\n") // ignore for now
 		}
 	}
 }
@@ -256,9 +257,9 @@ func (s *shell) run() {
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				d.print("if it doesnt exist, it should be here")
-				fmt.Fprintf(cmd.stdout, "%s: command not found\r\n", cmd.name)
+				fmt.Fprintf(cmd.stderr, "%s: command not found\r\n", cmd.name)
 			} else {
-				fmt.Fprintf(cmd.stdout, "%v\r\n", cmd.err)
+				fmt.Fprintf(cmd.stderr, "%v\r\n", cmd.err)
 			}
 			continue
 		}
