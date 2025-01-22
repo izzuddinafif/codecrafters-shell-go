@@ -20,11 +20,12 @@ import (
 const (
 	TAB = 9
 
+	// Keep in mind !!!
 	ENTER_LF = 10
 	ENTER_CR = 13
 	// Added LF (Unix-like systems) since I only used CR (13) but the tester won't
-	// detect it since their env use LF instead of CR. Wasted lots of hours :')
-	// thanks DeepSeek-R1
+	// detect it since their env uses LF instead of CR. Wasted lots of hours here :(
+	// thanks DeepSeek-R1 for detecting this issue.
 
 	BACKSPACE = 127
 	CTRL_C    = 3
