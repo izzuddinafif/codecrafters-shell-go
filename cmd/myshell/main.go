@@ -4,33 +4,53 @@ This is Afif's Implementation of Shell.
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/term"
 )
+
+const (
+	TAB       = 9
+	ENTER     = 13
+	BACKSPACE = 127
+	CTRL_C    = 3
+	CTRL_D    = 4
+)
+
+var CONTROL = map[int]string{
+	CTRL_C: "CTRL_C",
+	CTRL_D: "CTRL_D",
+}
 
 type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: true}
+var d debugger = debugger{enabled: false}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
-		log.Print(a...)
+		fmt.Fprint(os.Stderr, "[DEBUG] ")
+		for i, v := range a {
+			fmt.Fprint(os.Stderr, v)
+			if i < len(a) {
+				fmt.Fprint(os.Stderr, " ")
+			}
+		}
+		fmt.Fprint(os.Stderr, "\r\n")
 	}
 }
 
 func (d debugger) printf(format string, a ...interface{}) {
 	if d.enabled {
-		log.Printf(format, a...)
+		fmt.Fprintf(os.Stderr, "[DEBUG] "+format+"\r\n", a...) // Add \r
 	}
 }
 
@@ -44,6 +64,202 @@ var builtIns = map[string]struct{}{
 	"type": {},
 	"pwd":  {},
 	"cd":   {},
+}
+
+type shell struct {
+	oldState    *term.State  // Terminal state to restore
+	inputBuffer bytes.Buffer // Current user input
+	stdinFD     int          // Needed for term operations
+}
+
+// Initialize with terminal setup
+func newShell() (*shell, error) {
+	stdinFd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(stdinFd)
+	if err != nil {
+		return nil, err
+	}
+	return &shell{
+		oldState: oldState,
+		stdinFD:  stdinFd,
+	}, nil
+}
+
+func (s *shell) printPrompt() {
+	fmt.Fprint(os.Stdout, "\r$ ")
+}
+
+func (s *shell) readInput() string {
+	s.inputBuffer.Reset()
+	var input string
+	for {
+		var buf [1]byte // read per char input
+		n, err := os.Stdin.Read(buf[:])
+		if err != nil || n == 0 {
+			break
+		}
+		char := buf[0]
+		var matchCount int
+
+		if char == TAB {
+			if s.inputBuffer.Len() > 0 {
+				var matches []string
+				str := strings.Fields(s.inputBuffer.String())
+				substring := str[len(str)-1]
+				// d.print(fmt.Print(substring[len(substring)-1]))
+				for k := range builtIns {
+					if strings.HasPrefix(k, substring) {
+						matchCount++
+						matches = append(matches, k)
+					}
+				}
+				if matchCount > 1 {
+					fmt.Print("\r\n")
+					d.print("more than 1 match found")
+					d.printf("%v", matches)
+					s.redrawLine()
+					continue
+				} else if matchCount == 1 {
+					s.inputBuffer.Truncate(s.inputBuffer.Len() - len(substring))
+					s.inputBuffer.WriteString(matches[0] + " ")
+				}
+			}
+		} else if char == ENTER {
+			input = s.inputBuffer.String()
+			s.inputBuffer.Reset()
+			break
+		} else if char == BACKSPACE {
+			if s.inputBuffer.Len() > 0 {
+				fmt.Print("\b \b")
+				s.inputBuffer.Truncate(s.inputBuffer.Len() - 1)
+			}
+			continue
+		} else if _, exists := CONTROL[int(char)]; exists {
+			if handled := s.handleControlChars(char); handled {
+				continue // Skip further processing for this character
+			}
+		} else {
+			s.inputBuffer.Write(buf[:])
+		}
+
+		// This approach rewrites the buffer each time we type a char. Apparently this is the standard.
+		// Silly me tried to track the cursor and insert/delete char in place :')
+		s.redrawLine()
+	}
+	return input
+}
+
+func (s *shell) redrawLine() {
+	fmt.Print("\r\x1b[K")                      // Move to start + clear line
+	fmt.Printf("$ %s", s.inputBuffer.String()) // Rewrite
+	fmt.Print("\x1b[?25h")                     // Ensure cursor visibility
+}
+
+func (s *shell) executeCommand(cmd *command) {
+
+	if cmd.internal {
+		cmd.err = cmd.execute(s) // builtins use raw mode
+		if cmd.err != nil {
+			fmt.Fprint(cmd.stderr, cmd.err, "\r\n")
+		}
+	} else {
+		term.Restore(s.stdinFD, s.oldState) // set to cooked mode
+		defer term.MakeRaw(s.stdinFD)       // restore raw mode
+		cmd.err = cmd.execute(s)
+		if cmd.err != nil {
+			fmt.Fprint(cmd.stderr, cmd.err, "\r\n")
+		}
+	}
+}
+
+// parseInput reads user input, split it into a command and arguments,
+// then determines if the command is built-in or external, if it's external,
+// gets the command's path via getCmdPath. Handles quoting via handleArgs.
+
+func (s *shell) parseInput(readString string) (*command, error) {
+	cmd := newCommand()
+	if len(readString) == 0 {
+		return cmd, nil
+	}
+	input := strings.TrimLeft(readString, " \t")
+
+	var parts []string
+	if input[0] == '"' || input[0] == '\'' {
+		ind := strings.Index(input[1:], string(input[0]))
+		if ind == -1 {
+			return cmd, fmt.Errorf("missing closing quote")
+		}
+		d.print(input)
+		parts = strings.SplitN(input[1:], string(input[0]), 2)
+	} else {
+		parts = strings.SplitN(input, " ", 2)
+	}
+
+	cmd.name = parts[0]
+	// d.print(parts)
+
+	if len(parts) > 1 {
+		args := parts[1]
+		args = strings.TrimLeft(args, " \t")
+		cmd.args, cmd.err = handleArgs(cmd, args)
+		if cmd.err != nil {
+			return cmd, cmd.err
+		}
+	}
+
+	_, cmd.internal = builtIns[cmd.name]
+	if !cmd.internal {
+		if strings.Contains(cmd.name, "/") {
+			cmd.path = cmd.name
+		} else {
+			cmd.path, cmd.err = getCmdPath(cmd.name)
+			if cmd.err != nil {
+				return cmd, cmd.err
+			}
+		}
+	}
+	return cmd, nil
+}
+
+func (s *shell) handleControlChars(char byte) bool {
+	switch char {
+	case CTRL_C:
+		fmt.Print("^C")
+		fmt.Print("\r\n$ ")
+		s.inputBuffer.Reset()
+		return true
+	case CTRL_D:
+		if s.inputBuffer.Len() == 0 {
+			s.exitShell(0)
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+// Shell's main loop
+func (s *shell) run() {
+	for {
+		s.printPrompt()
+		input := s.readInput()
+		cmd, err := s.parseInput(input)
+		if err != nil {
+			if err == os.ErrNotExist {
+				fmt.Fprintf(cmd.stderr, "%s: command not found\r\n", cmd.name)
+			} else {
+				fmt.Fprintf(cmd.stderr, "%v\r\n", cmd.err)
+			}
+			continue
+		}
+		s.executeCommand(cmd)
+	}
+}
+
+func (s *shell) exitShell(code int) {
+	term.Restore(s.stdinFD, s.oldState) // restore the terminal when done
+	fmt.Print("\r\nHave a good one!👋\r\n")
+	os.Exit(code)
 }
 
 type command struct {
@@ -72,8 +288,12 @@ func newCommand() *command {
 	}
 }
 
-func (cmd *command) execute() error {
+func (cmd *command) execute(s *shell) error {
 	// handle internal command
+
+	if cmd.name != "exit" {
+		fmt.Print("\r\n")
+	}
 	if cmd.internal {
 		switch cmd.name {
 		case "exit":
@@ -85,13 +305,13 @@ func (cmd *command) execute() error {
 				if err != nil || code > 255 || code < 0 {
 					return fmt.Errorf("exit: invalid argument")
 				}
-				os.Exit(code)
+				s.exitShell(code)
 			}
-			os.Exit(0)
+			s.exitShell(0)
 		case "echo":
 			echoed := strings.Join(cmd.args, " ")
 			// d.print("echoed: ", echoed)
-			fmt.Fprintln(cmd.stdout, echoed)
+			fmt.Fprintf(cmd.stdout, "%s\r\n", echoed)
 		case "type":
 			if len(cmd.args) < 1 {
 				return fmt.Errorf("type: missing operand")
@@ -431,63 +651,6 @@ func redirect(cmd *command, target string, desc int, appending bool) (err error)
 	return nil
 }
 
-// parseUserInput reads user input, split it into a command and arguments,
-// then determines if the command is built-in or external, if it's external,
-// gets the command's path via getCmdPath. Handles quoting via handleArgs.
-func parseUserInput() (*command, error) {
-	cmd := newCommand()
-
-	readBytes, _, err := bufio.NewReader(os.Stdin).ReadLine()
-	if err != nil {
-		if err == io.EOF {
-			return cmd, io.EOF
-		}
-		return cmd, fmt.Errorf("failed to read input: %s", err)
-	}
-	if len(readBytes) == 0 {
-		return cmd, nil
-	}
-	readString := string(readBytes)
-	input := strings.TrimLeft(readString, " \t")
-
-	var parts []string
-	if input[0] == '"' || input[0] == '\'' {
-		ind := strings.Index(input[1:], string(input[0]))
-		if ind == -1 {
-			return cmd, fmt.Errorf("missing closing quote")
-		}
-		d.print(input)
-		parts = strings.SplitN(input[1:], string(input[0]), 2)
-	} else {
-		parts = strings.SplitN(input, " ", 2)
-	}
-
-	cmd.name = parts[0]
-	d.print(parts)
-
-	if len(parts) > 1 {
-		args := parts[1]
-		args = strings.TrimLeft(args, " \t")
-		cmd.args, cmd.err = handleArgs(cmd, args)
-		if cmd.err != nil {
-			return cmd, cmd.err
-		}
-	}
-
-	_, cmd.internal = builtIns[cmd.name]
-	if !cmd.internal {
-		if strings.Contains(cmd.name, "/") {
-			cmd.path = cmd.name
-		} else {
-			cmd.path, cmd.err = getCmdPath(cmd.name)
-			if cmd.err != nil {
-				return cmd, cmd.err
-			}
-		}
-	}
-	return cmd, nil
-}
-
 // !!! DEPRECATED !!!
 // REPL is Read, Eval and Print Loop function that reads user
 // input, prints the result and wait for the next input.
@@ -543,50 +706,32 @@ func REPL() (err error) {
 }
 */
 
-// REPLv2 reimplements the former version with the addition of
-// type command struct integration.
-func REPLv2() {
-	cmd, err := parseUserInput()
-	if err != nil {
-		if err == io.EOF {
-			fmt.Println("\nHave a good one!👋")
-			os.Exit(0) // exit when ctrl+d is pressed
-		} else if err == os.ErrNotExist {
-			fmt.Fprintf(cmd.stderr, "%s: command not found\n", cmd.name)
-			return
-		}
-		fmt.Fprintln(cmd.stderr, err)
-		return
-	}
-	if len(cmd.name) == 0 {
-		return
-	}
-
-	cmd.err = cmd.execute()
-	if cmd.err != nil {
-		fmt.Fprintln(cmd.stderr, cmd.err)
-	}
-}
-
+// DEPRECATED
 // handleInterrupt handles interrupt signal with custom behaviour
-func handleInterrupt() {
-	sigChan := make(chan os.Signal, 1)
+// func handleInterrupt() {
+// 	sigChan := make(chan os.Signal, 1)
 
-	// listen for ctrl+c keystroke
-	signal.Notify(sigChan, os.Interrupt)
+// 	// listen for ctrl+c keystroke
+// 	signal.Notify(sigChan, os.Interrupt)
 
-	go func() {
-		for range sigChan {
-			fmt.Fprintln(os.Stdout)
-			fmt.Fprint(os.Stdout, "$ ")
-		}
-	}()
-}
+// 	go func() {
+// 		for range sigChan {
+// 			fmt.Fprintln(os.Stdout)
+// 			fmt.Fprint(os.Stdout, "$ ")
+// 		}
+// 	}()
+// }
 
 func main() {
-	handleInterrupt() // set up ctrl+c handling
-	for {
-		fmt.Fprint(os.Stdout, "$ ")
-		REPLv2()
+
+	sh, err := newShell()
+	if err != nil {
+		panic(err)
 	}
+	defer term.Restore(sh.stdinFD, sh.oldState) // Safety net
+
+	if err != nil {
+		panic(err)
+	}
+	sh.run()
 }
