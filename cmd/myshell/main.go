@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,8 +18,14 @@ import (
 )
 
 const (
-	TAB       = 9
-	ENTER     = 13
+	TAB = 9
+
+	ENTER_LF = 10
+	ENTER_CR = 13
+	// Added LF (Unix-like systems) since I only used CR (13) but the tester won't
+	// detect it since their env use LF instead of CR. Wasted lots of hours :')
+	// thanks DeepSeek-R1
+
 	BACKSPACE = 127
 	CTRL_C    = 3
 	CTRL_D    = 4
@@ -33,7 +40,7 @@ type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: false}
+var d debugger = debugger{enabled: true}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
@@ -114,7 +121,6 @@ func (s *shell) readInput() string {
 					}
 				}
 				if matchCount > 1 {
-					fmt.Print("\r\n")
 					d.print("more than 1 match found")
 					d.printf("%v", matches)
 					s.redrawLine()
@@ -124,9 +130,11 @@ func (s *shell) readInput() string {
 					s.inputBuffer.WriteString(matches[0] + " ")
 				}
 			}
-		} else if char == ENTER {
+			// Handle both LF (10) and CR (13)
+		} else if char == ENTER_CR || char == ENTER_LF {
 			input = s.inputBuffer.String()
 			s.inputBuffer.Reset()
+			fmt.Print("\r\n")
 			break
 		} else if char == BACKSPACE {
 			if s.inputBuffer.Len() > 0 {
@@ -156,18 +164,18 @@ func (s *shell) redrawLine() {
 }
 
 func (s *shell) executeCommand(cmd *command) {
-
 	if cmd.internal {
 		cmd.err = cmd.execute(s) // builtins use raw mode
 		if cmd.err != nil {
-			fmt.Fprint(cmd.stderr, cmd.err, "\r\n")
+			fmt.Fprint(cmd.stdout, cmd.err, "\r\n")
 		}
 	} else {
+		d.print("executing external command")
 		term.Restore(s.stdinFD, s.oldState) // set to cooked mode
 		defer term.MakeRaw(s.stdinFD)       // restore raw mode
 		cmd.err = cmd.execute(s)
 		if cmd.err != nil {
-			fmt.Fprint(cmd.stderr, cmd.err, "\r\n")
+			// fmt.Fprint(cmd.stdout, cmd.err, "\r\n")
 		}
 	}
 }
@@ -175,7 +183,6 @@ func (s *shell) executeCommand(cmd *command) {
 // parseInput reads user input, split it into a command and arguments,
 // then determines if the command is built-in or external, if it's external,
 // gets the command's path via getCmdPath. Handles quoting via handleArgs.
-
 func (s *shell) parseInput(readString string) (*command, error) {
 	cmd := newCommand()
 	if len(readString) == 0 {
@@ -196,7 +203,7 @@ func (s *shell) parseInput(readString string) (*command, error) {
 	}
 
 	cmd.name = parts[0]
-	// d.print(parts)
+	d.print(parts)
 
 	if len(parts) > 1 {
 		args := parts[1]
@@ -230,6 +237,7 @@ func (s *shell) handleControlChars(char byte) bool {
 		return true
 	case CTRL_D:
 		if s.inputBuffer.Len() == 0 {
+			fmt.Print("\r\n")
 			s.exitShell(0)
 		}
 		return true
@@ -245,10 +253,11 @@ func (s *shell) run() {
 		input := s.readInput()
 		cmd, err := s.parseInput(input)
 		if err != nil {
-			if err == os.ErrNotExist {
-				fmt.Fprintf(cmd.stderr, "%s: command not found\r\n", cmd.name)
+			if errors.Is(err, os.ErrNotExist) {
+				d.print("if it doesnt exist, it should be here")
+				fmt.Fprintf(cmd.stdout, "%s: command not found\r\n", cmd.name)
 			} else {
-				fmt.Fprintf(cmd.stderr, "%v\r\n", cmd.err)
+				fmt.Fprintf(cmd.stdout, "%v\r\n", cmd.err)
 			}
 			continue
 		}
@@ -258,7 +267,7 @@ func (s *shell) run() {
 
 func (s *shell) exitShell(code int) {
 	term.Restore(s.stdinFD, s.oldState) // restore the terminal when done
-	fmt.Print("\r\nHave a good one!👋\r\n")
+	// fmt.Print("Have a good one!👋\r\n")
 	os.Exit(code)
 }
 
@@ -291,9 +300,6 @@ func newCommand() *command {
 func (cmd *command) execute(s *shell) error {
 	// handle internal command
 
-	if cmd.name != "exit" {
-		fmt.Print("\r\n")
-	}
 	if cmd.internal {
 		switch cmd.name {
 		case "exit":
@@ -381,12 +387,11 @@ func (cmd *command) execute(s *shell) error {
 		c.Stderr = cmd.stderr
 		// d.printf("cmd stderr: %v", c.Stderr)
 
-		cmd.err = c.Run()
-		if cmd.err != nil {
-			return nil //fmt.Errorf("%s: %v", cmd.name, cmd.err)
+		if err := c.Run(); err != nil {
+			// fmt.Fprintf(cmd.stderr, "%v\r\n", err)
+			return err
 		}
 	}
-
 	return nil
 }
 
@@ -706,7 +711,7 @@ func REPL() (err error) {
 }
 */
 
-// DEPRECATED
+// !!! DEPRECATED !!!
 // handleInterrupt handles interrupt signal with custom behaviour
 // func handleInterrupt() {
 // 	sigChan := make(chan os.Signal, 1)
@@ -730,8 +735,5 @@ func main() {
 	}
 	defer term.Restore(sh.stdinFD, sh.oldState) // Safety net
 
-	if err != nil {
-		panic(err)
-	}
 	sh.run()
 }
