@@ -11,8 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -36,6 +38,21 @@ var CONTROL = map[int]string{
 	CTRL_C: "CTRL_C",
 	CTRL_D: "CTRL_D",
 }
+
+type execCache struct {
+	exec      []string  // exec names
+	timestamp time.Time // cache creation time
+}
+
+// TODO: implement exec autocompletion with cache
+func newExecCache() *execCache {
+	return &execCache{
+		exec:      listAllExecInPath(),
+		timestamp: time.Now(),
+	}
+}
+
+var execs execCache = *newExecCache()
 
 type debugger struct {
 	enabled bool
@@ -119,6 +136,15 @@ func (s *shell) readInput() string {
 					if strings.HasPrefix(k, substring) {
 						matchCount++
 						matches = append(matches, k)
+					}
+				}
+				for _, ex := range execs.exec {
+					if strings.HasPrefix(ex, substring) {
+						// d.print("match found: ", ex, "\r\n")
+						if !slices.Contains(matches, ex) { // not exactly the most efficient but we'll take it for now :/
+							matchCount++
+							matches = append(matches, ex)
+						}
 					}
 				}
 				if matchCount > 1 {
@@ -409,17 +435,52 @@ func isExec(file os.FileMode) bool {
 	return file.IsRegular() && file.Perm()&0o111 != 0
 }
 
+func getPath() ([]string, error) {
+	pathEnv, ok := os.LookupEnv("PATH")
+	if !ok || pathEnv == "" {
+		return nil, fmt.Errorf("PATH environment variable is not set")
+	}
+	return strings.Split(pathEnv, string(os.PathListSeparator)), nil
+	// d.print("paths: ", strings.Join(paths, " "))
+}
+
+func listAllExecInPath() []string {
+	var exec []string
+	paths, err := getPath()
+	if err != nil {
+		fmt.Printf("%v\r\n", err)
+		return nil
+	}
+	for _, dir := range paths {
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			// fmt.Printf("%v\r\n", err)
+			// ignore for now
+		}
+		for _, file := range files {
+			// info, err := file.Info()
+			if err != nil {
+				d.print(err, "\r\n")
+			}
+			if exist := slices.Contains(exec, file.Name()); !exist /* && !strings.ContainsRune(file.Name(), '.') */ {
+				exec = append(exec, file.Name())
+			}
+		}
+	}
+	// d.print("hey we found:", len(exec), "\r\n")
+	return exec
+}
+
 // getCmdPath searches for an executable in the system PATH and returns its full path.
 // It checks each directory in PATH for a file matching execName that has execute
 // permissions. Returns an error if PATH is not set, executable is not found, or
 // encounters permissions/IO errors.
 func getCmdPath(execName string) (string, error) {
-	pathEnv, ok := os.LookupEnv("PATH")
-	if !ok || pathEnv == "" {
-		return "", fmt.Errorf("PATH environment variable is not set")
+
+	paths, err := getPath()
+	if err != nil {
+		fmt.Printf("%v\r\n", err)
 	}
-	paths := strings.Split(pathEnv, string(os.PathListSeparator))
-	// d.print("paths: ", strings.Join(paths, " "))
 
 	for _, dir := range paths {
 		fullPath := filepath.Join(dir, execName)
