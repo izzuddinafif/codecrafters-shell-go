@@ -122,7 +122,6 @@ func (s *shell) readInput() string {
 					}
 				}
 				if matchCount > 1 {
-					d.print("\r\n")
 					d.print("more than 1 match found")
 					d.printf("%v", matches)
 					s.redrawLine()
@@ -130,6 +129,8 @@ func (s *shell) readInput() string {
 				} else if matchCount == 1 {
 					s.inputBuffer.Truncate(s.inputBuffer.Len() - len(substring))
 					s.inputBuffer.WriteString(matches[0] + " ")
+				} else if matchCount == 0 {
+					fmt.Print("\a")
 				}
 			}
 			// Handle both LF (10) and CR (13)
@@ -261,6 +262,9 @@ func (s *shell) run() {
 			} else {
 				fmt.Fprintf(cmd.stderr, "%v\r\n", cmd.err)
 			}
+			continue
+		}
+		if cmd.name == "" {
 			continue
 		}
 		s.executeCommand(cmd)
