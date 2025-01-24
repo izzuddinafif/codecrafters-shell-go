@@ -58,7 +58,7 @@ type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: true}
+var d debugger = debugger{enabled: false}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
@@ -116,6 +116,7 @@ func (s *shell) printPrompt() {
 
 func (s *shell) readInput() string {
 	s.inputBuffer.Reset()
+	var tabCount int
 	var input string
 	for {
 		var buf [1]byte // read per char input
@@ -127,6 +128,7 @@ func (s *shell) readInput() string {
 		var matchCount int
 
 		if char == TAB {
+			tabCount++
 			if s.inputBuffer.Len() > 0 {
 				var matches []string
 				str := strings.Fields(s.inputBuffer.String())
@@ -150,11 +152,20 @@ func (s *shell) readInput() string {
 				if matchCount > 1 {
 					d.print("more than 1 match found")
 					d.printf("%v", matches)
+					d.print(tabCount)
+
+					if tabCount < 2 {
+						fmt.Print("\a")
+					} else if tabCount >= 2 {
+						slices.Sort(matches)
+						fmt.Printf("\r\n%s\n\r", strings.Join(matches, "  "))
+					}
 					s.redrawLine()
 					continue
 				} else if matchCount == 1 {
 					s.inputBuffer.Truncate(s.inputBuffer.Len() - len(substring))
 					s.inputBuffer.WriteString(matches[0] + " ")
+					tabCount = 0
 				} else if matchCount == 0 {
 					fmt.Print("\a")
 				}
