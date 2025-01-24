@@ -58,7 +58,7 @@ type debugger struct {
 	enabled bool
 }
 
-var d debugger = debugger{enabled: false}
+var d debugger = debugger{enabled: true}
 
 func (d debugger) print(a ...interface{}) {
 	if d.enabled {
@@ -114,6 +114,41 @@ func (s *shell) printPrompt() {
 	fmt.Fprint(os.Stdout, "\r$ ")
 }
 
+func findLongestCommonPrefix(buf string, matches []string) string {
+	longestCommonPrefix := matches[0]
+	for _, match := range matches {
+		// d.print("matching:", match, longestCommonPrefix)
+		if !strings.HasPrefix(match, longestCommonPrefix) {
+			// d.print(match, "has no prefix:", longestCommonPrefix)
+			longestCommonPrefix = buf
+			break
+		}
+	}
+	d.print("returning:", longestCommonPrefix)
+	return longestCommonPrefix
+}
+
+func findMatches(substring string) (int, []string) {
+	var matchCount int
+	var matches []string
+	for k := range builtIns {
+		if strings.HasPrefix(k, substring) {
+			matchCount++
+			matches = append(matches, k)
+		}
+	}
+	for _, ex := range execs.exec {
+		if strings.HasPrefix(ex, substring) {
+			// d.print("match found: ", ex, "\r\n")
+			if !slices.Contains(matches, ex) { // not exactly the most efficient but we'll take it for now :/
+				matchCount++
+				matches = append(matches, ex)
+			}
+		}
+	}
+	return matchCount, matches
+}
+
 func (s *shell) readInput() string {
 	s.inputBuffer.Reset()
 	var tabCount int
@@ -125,39 +160,29 @@ func (s *shell) readInput() string {
 			break
 		}
 		char := buf[0]
-		var matchCount int
 
 		if char == TAB {
+
 			tabCount++
 			if s.inputBuffer.Len() > 0 {
 				var matches []string
 				str := strings.Fields(s.inputBuffer.String())
 				substring := str[len(str)-1]
 				// d.print(fmt.Print(substring[len(substring)-1]))
-				for k := range builtIns {
-					if strings.HasPrefix(k, substring) {
-						matchCount++
-						matches = append(matches, k)
-					}
-				}
-				for _, ex := range execs.exec {
-					if strings.HasPrefix(ex, substring) {
-						// d.print("match found: ", ex, "\r\n")
-						if !slices.Contains(matches, ex) { // not exactly the most efficient but we'll take it for now :/
-							matchCount++
-							matches = append(matches, ex)
-						}
-					}
-				}
+				matchCount, matches := findMatches(substring)
 				if matchCount > 1 {
 					d.print("more than 1 match found")
 					d.printf("%v", matches)
-					d.print(tabCount)
-
-					if tabCount < 2 {
+					slices.Sort(matches)
+					d.print(matches)
+					longestCommonPrefix := findLongestCommonPrefix(s.inputBuffer.String(), matches)
+					d.print("longest common:", longestCommonPrefix)
+					if !(longestCommonPrefix == s.inputBuffer.String()) {
+						s.inputBuffer.Truncate(s.inputBuffer.Len() - len(substring))
+						s.inputBuffer.WriteString(longestCommonPrefix)
+					} else if tabCount < 2 {
 						fmt.Print("\a")
 					} else if tabCount >= 2 {
-						slices.Sort(matches)
 						fmt.Printf("\r\n%s\n\r", strings.Join(matches, "  "))
 					}
 					s.redrawLine()
@@ -184,6 +209,7 @@ func (s *shell) readInput() string {
 			continue
 		} else if _, exists := CONTROL[int(char)]; exists {
 			if handled := s.handleControlChars(char); handled {
+				tabCount = 0
 				continue // Skip further processing for this character
 			}
 		} else {
